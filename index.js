@@ -150,7 +150,7 @@ const reducePlugin = postcss.plugin("reducePlugin", () => {
         matched = true;
       }
 
-      // Removing transparent adds Link Button border color 
+      // Removing transparent adds Link Button border color
       // https://github.com/mzohaibqc/antd-theme-generator/issues/64
       // if (!matched && decl.value === 'transparent') {
       //   decl.remove();
@@ -172,11 +172,12 @@ const reducePlugin = postcss.plugin("reducePlugin", () => {
       }
       */
       if (
-        !decl.prop.includes("color") &&
-        !decl.prop.includes("background") &&
-        !decl.prop.includes("border") &&
-        !decl.prop.includes("box-shadow") &&
-        !Number.isNaN(decl.value)
+        decl.prop.includes("radius") ||
+        (!decl.prop.includes("color") &&
+          !decl.prop.includes("background") &&
+          !decl.prop.includes("border") &&
+          !decl.prop.includes("box-shadow") &&
+          !Number.isNaN(decl.value))
       ) {
         // if (!matched) decl.remove();
         decl.remove();
@@ -213,11 +214,12 @@ function getMatches(string, regex) {
 /*
   This function takes less input as string and compiles into css.
 */
-function render(text, paths) {
+function render(text, paths, variables) {
   return less.render(text, {
     paths: paths,
     javascriptEnabled: true,
     plugins: [new NpmImportPlugin({ prefix: "~" })],
+    modifyVars: variables || {},
   });
 }
 
@@ -322,23 +324,21 @@ async function compileAllLessFilesToCss(
       // if (avoidDuplicates) fileContent = fileContent.replace(/@import\ ["'](.*)["'];/g, '\n');
       const r = /@import ["'](.*)["'];/g;
       const directory = path.dirname(filePath);
-      fileContent = fileContent.replace(r, function (
-        match,
-        importPath,
-        index,
-        content
-      ) {
-        if (!importPath.endsWith(".less")) {
-          importPath += ".less";
+      fileContent = fileContent.replace(
+        r,
+        function (match, importPath, index, content) {
+          if (!importPath.endsWith(".less")) {
+            importPath += ".less";
+          }
+          const newPath = path.join(directory, importPath);
+          // If imported path/file already exists in styles paths then replace import statement with empty line
+          if (styles.indexOf(newPath) === -1) {
+            return match;
+          } else {
+            return "";
+          }
         }
-        const newPath = path.join(directory, importPath);
-        // If imported path/file already exists in styles paths then replace import statement with empty line
-        if (styles.indexOf(newPath) === -1) {
-          return match;
-        } else {
-          return "";
-        }
-      });
+      );
       Object.keys(varMap).forEach((varName) => {
         fileContent = fileContent.replace(
           new RegExp(`(:.*)(${varName})`, "g"),
@@ -389,6 +389,7 @@ async function compileAllLessFilesToCss(
 */
 async function generateTheme({
   antDir,
+  antVariables,
   antdStylesDir,
   stylesDir,
   varFile,
@@ -562,7 +563,11 @@ async function generateTheme({
     });
 
     antdLess = `${antdLess}\n${varsCombined}`;
-    const { css: antCss } = await render(antdLess, [antdPath, antdStylesDir]);
+    const { css: antCss } = await render(
+      antdLess,
+      [antdPath, antdStylesDir],
+      antVariables
+    );
     const allCss = `${antCss}\n${userCustomCss}`;
     results = await postcss([reducePlugin]).process(allCss, {
       from: antdStylesFile,
@@ -584,7 +589,7 @@ async function generateTheme({
       color = color.replace("(", "\\(").replace(")", "\\)");
       if (varName === "@slider-handle-color-focus") {
         console.log("color", color, varName);
-      } 
+      }
       css = css.replace(new RegExp(color, "g"), varName);
     });
 
